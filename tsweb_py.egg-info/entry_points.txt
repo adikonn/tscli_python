@@ -1,0 +1,2 @@
+[console_scripts]
+tsweb_py = tsweb_py.cli:main

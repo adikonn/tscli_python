@@ -1,0 +1,110 @@
+Metadata-Version: 2.4
+Name: tsweb_py
+Version: 1.0.0
+Summary: CLI client for TestSys online judge system (tsweb.ru)
+Author: khbminus && adikonn
+Keywords: testsys,tsweb,online-judge,cli,competitive-programming
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.31.0
+Requires-Dist: click>=8.1.0
+Requires-Dist: beautifulsoup4>=4.12.0
+Requires-Dist: lxml>=4.9.0
+Requires-Dist: rich>=13.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+
+# tsweb_py
+
+CLI клиент для системы тестирования TestSys (tsweb.ru/t/)
+
+## Установка
+
+```bash
+cd tsweb_cli_new
+pip install -e .
+```
+
+## Использование
+
+### Первый запуск
+
+1. **Авторизация:**
+```bash
+tsweb_py login
+```
+
+2. **Выбор контеста:**
+```bash
+tsweb_py local set-contest
+```
+
+3. **Получение списка задач и компиляторов:**
+```bash
+tsweb_py local parse
+```
+
+### Основные команды
+
+**Просмотр конфигурации:**
+```bash
+tsweb_py local show
+```
+
+**Просмотр информации о пользователе:**
+```bash
+tsweb_py info
+```
+
+**Отправка решения:**
+```bash
+tsweb_py submit solution.cpp -p 12A -l 1
+```
+где `-p` - задача, а `-l` - компилятор (по порядку, удобнее ставить по дефолту `tsweb_py local set-compiler`)
+Или автоматически определить задачу по имени файла:
+```bash
+tsweb_py submit 12A.cpp
+```
+
+**Просмотр посылок:**
+```bash
+tsweb_py submissions
+```
+
+**Установка компилятора по умолчанию:**
+```bash
+tsweb_py local set-compiler
+```
+
+### Структура
+
+- `~/.tsweb_py.global` - глобальная конфигурация (credentials)
+- `~/.tsweb_py.cookies` - cookies сессии (включая contest_id) - сохраняются через pickle
+- `.tsweb_py.local` - локальная конфигурация (problems, compilers, default_lang)
+
+## Возможности
+
+- Автоматическая авторизация и сохранение сессии
+- Переключение между контестами
+- Отправка решений с отслеживанием результатов
+- Просмотр всех посылок
+- Детальная информация о тестах
+- Цветной вывод результатов (OK, WA, TL и т.д.)
+
+## Требования
+
+- Python 3.8+
+- requests
+- click
+- beautifulsoup4
+- rich
