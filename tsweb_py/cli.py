@@ -206,6 +206,21 @@ def local_set_compiler():
     )
 
 
+@local.command(name="statements")
+@click.option("-o", "--output", type=click.Path(path_type=Path), help="Output file path")
+def local_statements(output: Optional[Path]):
+    """Download contest statements PDF."""
+    client = TestSysClient()
+
+    if not client.auto_login():
+        console.print("[yellow]Not logged in. Please login first.[/yellow]")
+        if not client.login():
+            return
+
+    console.print("[cyan]Fetching statements...[/cyan]")
+    client.download_statements(output)
+
+
 @cli.command()
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
 @click.option("-p", "--problem", help="Problem ID (default: extracted from filename)")

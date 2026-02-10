@@ -365,3 +365,105 @@ class TestSysClient:
         except Exception as e:
             console.print(f"[yellow]Warning: Failed to fetch test results: {e}[/yellow]")
             return []
+
+    def get_statements_url(self) -> Optional[str]:
+        """Get statements PDF URL from contest page."""
+        try:
+            html = self._get("/t/index.html")
+            soup = BeautifulSoup(html, "html.parser")
+            
+            # Find link with text "Statements" or similar
+            for link in soup.find_all("a"):
+                link_text = link.get_text(strip=True).lower()
+                if "statement" in link_text:
+                    url = link.get("href")
+                    if url:
+                        return url
+            
+            console.print("[yellow]No statements link found on contest page[/yellow]")
+            return None
+        except Exception as e:
+            console.print(f"[red]Failed to fetch statements URL: {e}[/red]")
+            return None
+
+    def download_statements(self, output_path: Optional[Path] = None) -> bool:
+        """Download statements PDF with progress bar."""
+        from rich.progress import Progress, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn
+        
+        # Get statements URL
+        url = self.get_statements_url()
+        if not url:
+            return False
+        
+        # Handle Google Drive links
+        if "drive.google.com" in url:
+            url = self._convert_gdrive_url(url)
+        
+        # Determine output filename
+        if output_path is None:
+            # Try to extract filename from URL
+            if url.endswith(".pdf"):
+                filename = url.split("/")[-1]
+            else:
+                filename = "statements.pdf"
+            output_path = Path.cwd() / filename
+        
+        try:
+            console.print(f"[cyan]Downloading from: {url}[/cyan]")
+            
+            # Stream download with progress bar
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+            
+            total_size = int(response.headers.get("content-length", 0))
+            
+            with Progress(
+                *Progress.get_default_columns(),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                TimeRemainingColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task(
+                    f"[cyan]Downloading {output_path.name}",
+                    total=total_size
+                )
+                
+                with open(output_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            progress.update(task, advance=len(chunk))
+            
+            console.print(f"[green]Successfully downloaded to: {output_path}[/green]")
+            return True
+            
+        except Exception as e:
+            console.print(f"[red]Failed to download statements: {e}[/red]")
+            return False
+
+    def _convert_gdrive_url(self, url: str) -> str:
+        """Convert Google Drive view URL to direct download URL."""
+        # Extract file ID from various Google Drive URL formats
+        # https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+        # https://drive.google.com/open?id=FILE_ID
+        
+        file_id = None
+        
+        # Pattern 1: /file/d/FILE_ID/
+        match = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
+        if match:
+            file_id = match.group(1)
+        
+        # Pattern 2: ?id=FILE_ID
+        if not file_id:
+            match = re.search(r'[?&]id=([a-zA-Z0-9_-]+)', url)
+            if match:
+                file_id = match.group(1)
+        
+        if file_id:
+            console.print(f"[cyan]Detected Google Drive file ID: {file_id}[/cyan]")
+            return f"https://drive.google.com/uc?export=download&id={file_id}"
+        
+        # If can't extract ID, return original URL
+        return url
