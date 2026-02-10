@@ -327,29 +327,41 @@ class TestSysClient:
 
     def get_feedback(self, submission_id: str) -> List[Test]:
         """Get detailed test feedback for a submission."""
-        html = self._get("/t/feedback", params={"id": submission_id})
-        soup = BeautifulSoup(html, "html.parser")
-        tests = []
+        try:
+            html = self._get("/t/feedback", params={"id": submission_id})
+            soup = BeautifulSoup(html, "html.parser")
+            tests = []
 
-        # Find test results table
-        table = soup.find("table")
-        if not table:
+            # Find test results table
+            table = soup.find("table")
+            if not table:
+                console.print("[yellow]Warning: No test results table found[/yellow]")
+                return tests
+
+            rows = table.find_all("tr")
+            if len(rows) <= 1:
+                console.print("[yellow]Warning: Empty test results table[/yellow]")
+                return tests
+
+            # Skip header row
+            data_rows = rows[1:]
+
+            for row in data_rows:
+                cols = row.find_all("td")
+                if len(cols) < 2:
+                    continue
+
+                # Handle different table formats
+                test = Test(
+                    test_id=cols[0].get_text(strip=True) if len(cols) > 0 else "",
+                    result=cols[1].get_text(strip=True) if len(cols) > 1 else "",
+                    time=cols[2].get_text(strip=True) if len(cols) > 2 else "",
+                    memory=cols[3].get_text(strip=True) if len(cols) > 3 else "",
+                    comment=cols[4].get_text(strip=True) if len(cols) > 4 else "",
+                )
+                tests.append(test)
+
             return tests
-
-        rows = table.find_all("tr")[1:]  # Skip header
-
-        for row in rows:
-            cols = row.find_all("td")
-            if len(cols) < 5:
-                continue
-
-            test = Test(
-                test_id=cols[0].get_text(strip=True),
-                result=cols[1].get_text(strip=True),
-                time=cols[2].get_text(strip=True) if len(cols) > 2 else "",
-                memory=cols[3].get_text(strip=True) if len(cols) > 3 else "",
-                comment=cols[4].get_text(strip=True) if len(cols) > 4 else "",
-            )
-            tests.append(test)
-
-        return tests
+        except Exception as e:
+            console.print(f"[yellow]Warning: Failed to fetch test results: {e}[/yellow]")
+            return []

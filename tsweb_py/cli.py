@@ -38,55 +38,69 @@ def local():
 
 @local.command(name="show")
 def local_show():
-    """Display current local configuration."""
-    config = LocalConfig.load()
-
-    if config is None:
-        console.print("[red]No local configuration found.[/red]")
-        console.print("Run 'tsweb_py local set-contest' to create one.")
-        return
-
-    # Show current contest from session
+    """Display current contest information, problems and compilers."""
     client = TestSysClient()
-    if client.auto_login():
-        user_info = client.get_user_info()
-        if "contest" in user_info:
-            console.print(
-                f"\n[bold cyan]Current Contest:[/bold cyan] {user_info['contest']}"
-            )
+    
+    if not client.auto_login():
+        console.print("[yellow]Not logged in. Please login first.[/yellow]")
+        if not client.login():
+            return
 
-    if config.compilers:
-        compiler = config.get_compiler()
-        if compiler:
-            console.print(
-                f"[bold cyan]Default Compiler:[/bold cyan] {compiler.compiler_name}"
-            )
+    # Show current contest and user info
+    user_info = client.get_user_info()
+    if "contest" in user_info:
+        console.print(
+            f"\n[bold cyan]Current Contest:[/bold cyan] {user_info['contest']}"
+        )
+    if "name" in user_info:
+        console.print(f"[bold cyan]User:[/bold cyan] {user_info['name']}")
 
-    if config.problems:
+    # Fetch problems and compilers from site
+    console.print("\n[cyan]Fetching problems and compilers...[/cyan]")
+    problems = client.get_problems()
+    compilers = client.get_compilers()
+
+    # Load default compiler index from local config
+    config = LocalConfig.load()
+    default_lang = config.default_lang if config else 0
+
+    # Show default compiler
+    if compilers and 0 <= default_lang < len(compilers):
+        console.print(
+            f"[bold cyan]Default Compiler:[/bold cyan] {compilers[default_lang].compiler_name}"
+        )
+
+    # Show problems
+    if problems:
         console.print(f"\n[bold cyan]Available Problems:[/bold cyan]")
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("ID", style="cyan")
         table.add_column("Name", style="white")
 
-        for problem in config.problems:
+        for problem in problems:
             table.add_row(problem.problem_id, problem.problem_name)
 
         console.print(table)
+    else:
+        console.print("[yellow]No problems found in this contest.[/yellow]")
 
-    if config.compilers:
+    # Show compilers
+    if compilers:
         console.print(f"\n[bold cyan]Available Compilers:[/bold cyan]")
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("#", style="cyan")
         table.add_column("Language", style="yellow")
         table.add_column("Name", style="white")
 
-        for idx, compiler in enumerate(config.compilers):
-            marker = "*" if idx == config.default_lang else ""
+        for idx, compiler in enumerate(compilers):
+            marker = "*" if idx == default_lang else ""
             table.add_row(
                 f"{idx}{marker}", compiler.compiler_lang, compiler.compiler_name
             )
 
         console.print(table)
+    else:
+        console.print("[yellow]No compilers found in this contest.[/yellow]")
 
 
 @local.command(name="set-contest")
@@ -140,67 +154,30 @@ def local_set_contest():
     config.save()
 
     console.print(f"[green]Switched to contest: {selected.name}[/green]")
-    console.print(
-        "[yellow]Run 'tsweb_py local parse' to fetch problems and compilers.[/yellow]"
-    )
-
-
-@local.command(name="parse")
-def local_parse():
-    """Fetch problems and compilers for current contest."""
-    config = LocalConfig.load()
-
-    if config is None:
-        console.print("[red]No local configuration found.[/red]")
-        console.print("Run 'tsweb_py local set-contest' first.")
-        return
-
-    client = TestSysClient()
-
-    # Auto-login
-    if not client.auto_login():
-        console.print("[yellow]Not logged in. Please login first.[/yellow]")
-        if not client.login():
-            return
-
-    # Fetch problems and compilers
-    console.print("[cyan]Fetching problems and compilers...[/cyan]")
-
-    config.problems = client.get_problems()
-    config.compilers = client.get_compilers()
-
-    if not config.problems:
-        console.print(
-            "[red]No problems found. Make sure you're in the right contest.[/red]"
-        )
-        return
-
-    if not config.compilers:
-        console.print("[red]No compilers found.[/red]")
-        return
-
-    config.save()
-
-    console.print(
-        f"[green]Found {len(config.problems)} problems and {len(config.compilers)} compilers.[/green]"
-    )
-    console.print("[yellow]Run 'tsweb_py local show' to view them.[/yellow]")
 
 
 @local.command(name="set-compiler")
 def local_set_compiler():
     """Choose default compiler/language."""
+    client = TestSysClient()
+
+    if not client.auto_login():
+        console.print("[yellow]Not logged in. Please login first.[/yellow]")
+        if not client.login():
+            return
+
+    # Fetch compilers from site
+    console.print("[cyan]Fetching compilers...[/cyan]")
+    compilers = client.get_compilers()
+
+    if not compilers:
+        console.print("[red]No compilers found in this contest.[/red]")
+        return
+
+    # Load current default
     config = LocalConfig.load()
-
     if config is None:
-        console.print("[red]No local configuration found.[/red]")
-        return
-
-    if not config.compilers:
-        console.print(
-            "[red]No compilers found. Run 'tsweb_py local parse' first.[/red]"
-        )
-        return
+        config = LocalConfig()
 
     # Display compilers
     table = Table(
@@ -210,14 +187,14 @@ def local_set_compiler():
     table.add_column("Language", style="yellow")
     table.add_column("Name", style="white")
 
-    for idx, compiler in enumerate(config.compilers):
+    for idx, compiler in enumerate(compilers):
         marker = "*" if idx == config.default_lang else ""
         table.add_row(f"{idx}{marker}", compiler.compiler_lang, compiler.compiler_name)
 
     console.print(table)
 
     # Let user choose
-    idx = choose_index("Select default compiler", config.compilers)
+    idx = choose_index("Select default compiler", compilers)
     if idx is None:
         return
 
@@ -225,7 +202,7 @@ def local_set_compiler():
     config.save()
 
     console.print(
-        f"[green]Default compiler set to: {config.compilers[idx].compiler_name}[/green]"
+        f"[green]Default compiler set to: {compilers[idx].compiler_name}[/green]"
     )
 
 
@@ -242,36 +219,6 @@ def local_set_compiler():
 )
 def submit(file: Path, problem: Optional[str], lang: Optional[int], watch: bool):
     """Submit a solution file."""
-    config = LocalConfig.load()
-
-    if config is None:
-        console.print("[red]No local configuration found.[/red]")
-        console.print("Run 'tsweb_py local set-contest' first.")
-        return
-
-    # Determine problem ID
-    if problem is None:
-        # Extract from filename (e.g., "12A.cpp" -> "12A")
-        problem = file.stem
-
-    # Validate problem exists
-    problem_exists = any(p.problem_id == problem for p in config.problems)
-    if not problem_exists:
-        console.print(
-            f"[yellow]Warning: Problem '{problem}' not found in config[/yellow]"
-        )
-
-    # Determine compiler
-    if lang is None:
-        lang = config.default_lang
-
-    if not (0 <= lang < len(config.compilers)):
-        console.print(f"[red]Invalid compiler index: {lang}[/red]")
-        return
-
-    compiler = config.compilers[lang]
-
-    # Submit
     client = TestSysClient()
 
     if not client.auto_login():
@@ -279,6 +226,31 @@ def submit(file: Path, problem: Optional[str], lang: Optional[int], watch: bool)
         if not client.login():
             return
 
+    # Determine problem ID
+    if problem is None:
+        # Extract from filename (e.g., "12A.cpp" -> "12A")
+        problem = file.stem
+
+    # Fetch compilers from site
+    compilers = client.get_compilers()
+    if not compilers:
+        console.print("[red]No compilers found in this contest.[/red]")
+        return
+
+    # Determine compiler
+    if lang is None:
+        # Load default from local config
+        config = LocalConfig.load()
+        lang = config.default_lang if config else 0
+
+    if not (0 <= lang < len(compilers)):
+        console.print(f"[red]Invalid compiler index: {lang}[/red]")
+        console.print(f"[yellow]Available compilers: 0-{len(compilers)-1}[/yellow]")
+        return
+
+    compiler = compilers[lang]
+
+    # Submit
     if not client.submit(problem, compiler.compiler_id, file):
         return
 
@@ -343,6 +315,8 @@ def watch_submission(client: TestSysClient):
             )
 
         console.print(table)
+    else:
+        console.print("[yellow]No detailed test results available.[/yellow]")
 
 
 @cli.command()
@@ -398,6 +372,43 @@ def submissions():
         )
 
     console.print(table)
+
+
+@cli.command()
+@click.argument("submission_id", type=str)
+def feedback(submission_id: str):
+    """Show detailed test results for a specific submission."""
+    client = TestSysClient()
+
+    if not client.auto_login():
+        console.print("[yellow]Not logged in. Please login first.[/yellow]")
+        if not client.login():
+            return
+
+    console.print(f"[cyan]Fetching feedback for submission {submission_id}...[/cyan]")
+    tests = client.get_feedback(submission_id)
+
+    if tests:
+        console.print(f"\n[bold cyan]Test Results for Submission {submission_id}:[/bold cyan]")
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Test", style="cyan")
+        table.add_column("Result", style="white")
+        table.add_column("Time", style="yellow")
+        table.add_column("Memory", style="yellow")
+        table.add_column("Comment", style="white")
+
+        for test in tests:
+            table.add_row(
+                test.test_id,
+                format_result_color(test.result),
+                test.time,
+                test.memory,
+                test.comment,
+            )
+
+        console.print(table)
+    else:
+        console.print("[yellow]No test results found for this submission.[/yellow]")
 
 
 @cli.command()
