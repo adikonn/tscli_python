@@ -31,13 +31,13 @@ def login():
 
 
 @cli.group()
-def local():
-    """Manage local contest configuration."""
+def contest():
+    """Manage contest information."""
     pass
 
 
-@local.command(name="show")
-def local_show():
+@contest.command(name="show")
+def contest_show():
     """Display current contest information, problems and compilers."""
     client = TestSysClient()
     
@@ -103,8 +103,8 @@ def local_show():
         console.print("[yellow]No compilers found in this contest.[/yellow]")
 
 
-@local.command(name="set-contest")
-def local_set_contest():
+@cli.command(name="set-contest")
+def set_contest():
     """Select and configure a contest."""
     client = TestSysClient()
 
@@ -156,8 +156,8 @@ def local_set_contest():
     console.print(f"[green]Switched to contest: {selected.name}[/green]")
 
 
-@local.command(name="set-compiler")
-def local_set_compiler():
+@cli.command(name="set-compiler")
+def set_compiler():
     """Choose default compiler/language."""
     client = TestSysClient()
 
@@ -206,9 +206,9 @@ def local_set_compiler():
     )
 
 
-@local.command(name="statements")
+@contest.command(name="statements")
 @click.option("-o", "--output", type=click.Path(path_type=Path), help="Output file path")
-def local_statements(output: Optional[Path]):
+def contest_statements(output: Optional[Path]):
     """Download contest statements PDF."""
     client = TestSysClient()
 
