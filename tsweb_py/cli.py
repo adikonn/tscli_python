@@ -221,9 +221,9 @@ def contest_statements(output: Optional[Path]):
     client.download_statements(output)
 
 
-@cli.command()
+@contest.command(name="submit")
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
-@click.option("-p", "--problem", help="Problem ID (default: extracted from filename)")
+@click.option("-p", "--problem", help="Problem ID (skip interactive selection)")
 @click.option("-l", "--lang", type=int, help="Compiler index (default: from config)")
 @click.option(
     "-w",
@@ -238,7 +238,7 @@ def contest_statements(output: Optional[Path]):
     default=False,
     help="Enable debug output",
 )
-def submit(file: Path, problem: Optional[str], lang: Optional[int], watch: bool, debug: bool):
+def contest_submit(file: Path, problem: Optional[str], lang: Optional[int], watch: bool, debug: bool):
     """Submit a solution file."""
     client = TestSysClient()
 
@@ -249,8 +249,33 @@ def submit(file: Path, problem: Optional[str], lang: Optional[int], watch: bool,
 
     # Determine problem ID
     if problem is None:
-        # Extract from filename (e.g., "12A.cpp" -> "12A")
-        problem = file.stem
+        # Fetch problems and show interactive selection
+        console.print("[cyan]Fetching problems...[/cyan]")
+        problems = client.get_problems()
+        
+        if not problems:
+            console.print("[red]No problems found in this contest.[/red]")
+            return
+        
+        # Display problems table
+        table = Table(
+            title="Available Problems", show_header=True, header_style="bold cyan"
+        )
+        table.add_column("#", style="cyan")
+        table.add_column("ID", style="yellow")
+        table.add_column("Name", style="white")
+        
+        for idx, prob in enumerate(problems):
+            table.add_row(str(idx), prob.problem_id, prob.problem_name)
+        
+        console.print(table)
+        
+        # Let user choose
+        idx = choose_index("Select problem", problems)
+        if idx is None:
+            return
+        
+        problem = problems[idx].problem_id
 
     if debug:
         console.print(f"[cyan]DEBUG: Problem ID = {problem}[/cyan]")
