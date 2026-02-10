@@ -44,6 +44,18 @@ class TestSysClient:
     def _get(self, path: str, **kwargs) -> str:
         """Make GET request and decode with KOI8-R."""
         url = f"{self.BASE_URL}{path}"
+        # Add default timeout if not specified
+        # Use tuple (connect_timeout, read_timeout) for better control
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = (10, 30)  # 10s to connect, 30s to read
+        
+        # Close existing connections to avoid keep-alive issues
+        # This helps prevent hanging on repeated requests
+        if hasattr(self.session, 'close') and path == "/t/allsubmits":
+            # Only for allsubmits to avoid breaking other requests
+            for adapter in self.session.adapters.values():
+                adapter.close()
+        
         response = self.session.get(url, **kwargs)
         response.raise_for_status()
         return response.content.decode(self.ENCODING, errors="ignore")
@@ -59,6 +71,10 @@ class TestSysClient:
             }
         else:
             encoded_data = None
+        # Add default timeout if not specified
+        # Use tuple (connect_timeout, read_timeout) for better control
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = (10, 30)  # 10s to connect, 30s to read
         response = self.session.post(url, data=encoded_data, **kwargs)
         response.raise_for_status()
         return response.content.decode(self.ENCODING, errors="ignore")
@@ -288,42 +304,81 @@ class TestSysClient:
             console.print(f"[red]Failed to submit: {e}[/red]")
             return False
 
-    def get_all_submissions(self) -> List[Submission]:
+    def get_all_submissions(self, debug: bool = False) -> List[Submission]:
         """Scrape all submissions from the submissions page."""
-        html = self._get("/t/allsubmits")
-        soup = BeautifulSoup(html, "html.parser")
-        submissions = []
+        import time
+        start_time = time.time()
+        try:
+            if debug:
+                console.print(f"[cyan]DEBUG: [{time.strftime('%H:%M:%S')}] Starting HTTP GET request to /t/allsubmits...[/cyan]")
+            
+            html = self._get("/t/allsubmits")
+            
+            if debug:
+                elapsed = time.time() - start_time
+                console.print(f"[cyan]DEBUG: [{time.strftime('%H:%M:%S')}] HTTP request completed in {elapsed:.2f}s, received {len(html)} bytes[/cyan]")
+                console.print(f"[cyan]DEBUG: Starting BeautifulSoup parsing...[/cyan]")
+            
+            soup = BeautifulSoup(html, "html.parser")
+            
+            if debug:
+                console.print(f"[cyan]DEBUG: BeautifulSoup parsing completed[/cyan]")
+            submissions = []
 
-        # Find submissions table
-        table = soup.find("table", {"border": "1"})
-        if not table:
+            # Find submissions table
+            table = soup.find("table", {"border": "1"})
+            if not table:
+                if debug:
+                    console.print("[yellow]DEBUG: No submissions table found[/yellow]")
+                return submissions
+
+            rows = table.find_all("tr")
+            if debug:
+                console.print(f"[dim]DEBUG: Found {len(rows)} rows in submissions table[/dim]")
+            
+            # Find header row to determine column positions
+            header_found = False
+            for idx, row in enumerate(rows):
+                if not header_found:
+                    # Skip until we find the header row
+                    cells = row.find_all("td")
+                    if cells and cells[0].get_text(strip=True) == "ID":
+                        header_found = True
+                        if debug:
+                            console.print(f"[dim]DEBUG: Header row found at index {idx}[/dim]")
+                    continue
+
+                cols = row.find_all("td")
+                if len(cols) < 6:
+                    if debug:
+                        console.print(f"[dim]DEBUG: Skipping row with {len(cols)} columns (need 6+)[/dim]")
+                    continue
+
+                submission = Submission(
+                    id=cols[0].get_text(strip=True),
+                    problem=cols[1].get_text(strip=True),
+                    compiler=cols[4].get_text(strip=True),
+                    result=cols[5].get_text(strip=True),
+                    time=cols[3].get_text(strip=True),
+                )
+                submissions.append(submission)
+
+            if debug:
+                console.print(f"[dim]DEBUG: Parsed {len(submissions)} submissions[/dim]")
             return submissions
-
-        rows = table.find_all("tr")
-        # Find header row to determine column positions
-        header_found = False
-        for row in rows:
-            if not header_found:
-                # Skip until we find the header row
-                cells = row.find_all("td")
-                if cells and cells[0].get_text(strip=True) == "ID":
-                    header_found = True
-                continue
-
-            cols = row.find_all("td")
-            if len(cols) < 6:
-                continue
-
-            submission = Submission(
-                id=cols[0].get_text(strip=True),
-                problem=cols[1].get_text(strip=True),
-                compiler=cols[4].get_text(strip=True),
-                result=cols[5].get_text(strip=True),
-                time=cols[3].get_text(strip=True),
-            )
-            submissions.append(submission)
-
-        return submissions
+        except requests.exceptions.Timeout:
+            console.print(f"[red]ERROR: Request to /t/allsubmits timed out after 30 seconds[/red]")
+            console.print(f"[yellow]This may indicate a slow network or server issue.[/yellow]")
+            return []
+        except requests.exceptions.RequestException as e:
+            console.print(f"[red]ERROR: Network error in get_all_submissions: {e}[/red]")
+            return []
+        except Exception as e:
+            console.print(f"[red]ERROR in get_all_submissions: {e}[/red]")
+            if debug:
+                import traceback
+                console.print(f"[red]{traceback.format_exc()}[/red]")
+            return []
 
     def get_feedback(self, submission_id: str) -> List[Test]:
         """Get detailed test feedback for a submission."""

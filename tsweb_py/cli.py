@@ -232,7 +232,13 @@ def local_statements(output: Optional[Path]):
     default=True,
     help="Watch submission results (default: true)",
 )
-def submit(file: Path, problem: Optional[str], lang: Optional[int], watch: bool):
+@click.option(
+    "--debug",
+    is_flag=True,
+    default=False,
+    help="Enable debug output",
+)
+def submit(file: Path, problem: Optional[str], lang: Optional[int], watch: bool, debug: bool):
     """Submit a solution file."""
     client = TestSysClient()
 
@@ -246,17 +252,29 @@ def submit(file: Path, problem: Optional[str], lang: Optional[int], watch: bool)
         # Extract from filename (e.g., "12A.cpp" -> "12A")
         problem = file.stem
 
+    if debug:
+        console.print(f"[cyan]DEBUG: Problem ID = {problem}[/cyan]")
+        console.print(f"[cyan]DEBUG: File path = {file}[/cyan]")
+
     # Fetch compilers from site
+    if debug:
+        console.print("[cyan]DEBUG: Fetching compilers from site...[/cyan]")
+    
     compilers = client.get_compilers()
     if not compilers:
         console.print("[red]No compilers found in this contest.[/red]")
         return
+
+    if debug:
+        console.print(f"[cyan]DEBUG: Found {len(compilers)} compilers[/cyan]")
 
     # Determine compiler
     if lang is None:
         # Load default from local config
         config = LocalConfig.load()
         lang = config.default_lang if config else 0
+        if debug:
+            console.print(f"[cyan]DEBUG: Using default compiler index: {lang}[/cyan]")
 
     if not (0 <= lang < len(compilers)):
         console.print(f"[red]Invalid compiler index: {lang}[/red]")
@@ -264,6 +282,9 @@ def submit(file: Path, problem: Optional[str], lang: Optional[int], watch: bool)
         return
 
     compiler = compilers[lang]
+    
+    if debug:
+        console.print(f"[cyan]DEBUG: Selected compiler: {compiler.compiler_lang}: {compiler.compiler_name} (ID: {compiler.compiler_id})[/cyan]")
 
     # Submit
     if not client.submit(problem, compiler.compiler_id, file):
@@ -271,45 +292,137 @@ def submit(file: Path, problem: Optional[str], lang: Optional[int], watch: bool)
 
     # Watch results if requested
     if watch:
-        watch_submission(client)
+        watch_submission(client, debug)
 
 
-def watch_submission(client: TestSysClient):
+def watch_submission(client: TestSysClient, debug: bool = False):
     """Poll and display submission results in real-time."""
     console.print("\n[cyan]Watching submission...[/cyan]")
 
     # Get latest submission ID
-    submissions = client.get_all_submissions()
+    if debug:
+        console.print("[cyan]DEBUG: Fetching all submissions to get latest ID...[/cyan]")
+    
+    submissions = client.get_all_submissions(debug=debug)
+    
+    if debug:
+        console.print(f"[cyan]DEBUG: Received {len(submissions) if submissions else 0} submissions[/cyan]")
+        if submissions:
+            console.print(f"[cyan]DEBUG: Latest submission ID: {submissions[0].id}[/cyan]")
+            console.print(f"[cyan]DEBUG: Latest submission problem: {submissions[0].problem}[/cyan]")
+            console.print(f"[cyan]DEBUG: Latest submission compiler: {submissions[0].compiler}[/cyan]")
+            console.print(f"[cyan]DEBUG: Latest submission result: {submissions[0].result}[/cyan]")
+    
     if not submissions:
         console.print("[red]No submissions found[/red]")
+        if debug:
+            console.print("[cyan]DEBUG: get_all_submissions() returned empty list[/cyan]")
         return
 
     latest = submissions[0]
     submission_id = latest.id
+    
+    if debug:
+        console.print(f"[cyan]DEBUG: Tracking submission ID: {submission_id}[/cyan]")
 
     # Poll until judging complete
-    with console.status("[bold green]Judging...") as status:
+    poll_count = 0
+    last_result = None
+    no_change_count = 0
+    MAX_NO_CHANGE = 20  # If result doesn't change for 10 seconds (20 * 0.5s), assume it's final
+    
+    # Don't use status spinner in debug mode - it can interfere with debug output and cause hangs
+    if debug:
+        console.print("[cyan]Starting polling loop (debug mode - no spinner)...[/cyan]")
         while True:
+            poll_count += 1
+            
+            if poll_count % 10 == 0:
+                console.print(f"[cyan]DEBUG: Poll #{poll_count}, still waiting...[/cyan]")
+            
             # Fetch current submissions
-            submissions = client.get_all_submissions()
+            submissions = client.get_all_submissions(debug=debug)
             current = next((s for s in submissions if s.id == submission_id), None)
 
             if current is None:
                 console.print("[red]Submission not found[/red]")
+                console.print(f"[cyan]DEBUG: Submission {submission_id} not found in latest submissions[/cyan]")
+                if submissions:
+                    console.print(f"[cyan]DEBUG: Available submission IDs: {[s.id for s in submissions[:5]]}[/cyan]")
                 return
+            
+            # Show debug info when result changes or first 3 polls
+            if poll_count <= 3 or current.result != last_result:
+                console.print(f"[cyan]DEBUG: Poll #{poll_count} - Result: '{current.result}' (upper: '{current.result.upper()}')[/cyan]")
+                if current.result != last_result and last_result is not None:
+                    console.print(f"[yellow]DEBUG: Result changed from '{last_result}' to '{current.result}'[/yellow]")
+                    no_change_count = 0
+                last_result = current.result
+            
+            # Track if result is stuck
+            if current.result == last_result:
+                no_change_count += 1
+                if no_change_count == MAX_NO_CHANGE:
+                    console.print(f"[yellow]DEBUG: Result hasn't changed for {MAX_NO_CHANGE} polls (~10 seconds)[/yellow]")
+                    console.print(f"[yellow]DEBUG: Assuming '{current.result}' is the final result[/yellow]")
 
             # Check if judging is complete
             if current.result.upper() not in ["NO", "JUDGING", "PENDING", ""]:
+                console.print(f"[cyan]DEBUG: Judging complete! Final result: {current.result}[/cyan]")
+                break
+            
+            # If result is stuck on "NO" for too long, assume it's final
+            # Some contests might not update the result field properly
+            if current.result.upper() == "NO" and no_change_count >= MAX_NO_CHANGE:
+                console.print(f"[yellow]DEBUG: Breaking out - result stuck on 'NO' for too long[/yellow]")
+                console.print(f"[yellow]DEBUG: This might be a contest-specific behavior[/yellow]")
                 break
 
             time.sleep(0.5)
+    else:
+        # Normal mode with status spinner
+        with console.status("[bold green]Judging...") as status:
+            while True:
+                poll_count += 1
+                
+                # Fetch current submissions
+                submissions = client.get_all_submissions(debug=False)
+                current = next((s for s in submissions if s.id == submission_id), None)
+
+                if current is None:
+                    console.print("[red]Submission not found[/red]")
+                    return
+                
+                # Track if result is stuck
+                if current.result == last_result:
+                    no_change_count += 1
+                else:
+                    no_change_count = 0
+                    last_result = current.result
+
+                # Check if judging is complete
+                if current.result.upper() not in ["NO", "JUDGING", "PENDING", ""]:
+                    break
+                
+                # If result is stuck on "NO" for too long, assume it's final
+                # Some contests might not update the result field properly
+                if current.result.upper() == "NO" and no_change_count >= MAX_NO_CHANGE:
+                    break
+
+                time.sleep(0.5)
 
     # Display final result
     console.print(f"\n[bold]Result:[/bold] {format_result_color(current.result)}")
     console.print(f"[bold]Time:[/bold] {current.time}")
 
     # Fetch detailed feedback
+    if debug:
+        console.print(f"[cyan]DEBUG: Fetching feedback for submission {submission_id}...[/cyan]")
+    
     tests = client.get_feedback(submission_id)
+    
+    if debug:
+        console.print(f"[cyan]DEBUG: Received {len(tests) if tests else 0} test results[/cyan]")
 
     if tests:
         console.print("\n[bold cyan]Test Results:[/bold cyan]")
