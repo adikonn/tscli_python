@@ -522,3 +522,14 @@ class TestSysClient:
         
         # If can't extract ID, return original URL
         return url
+
+    def get_monitor_html(self) -> str:
+        """
+        Fetch the monitor (leaderboard) page HTML.
+        Monitor page uses windows-1251 encoding instead of KOI8-R.
+        """
+        url = f"{self.BASE_URL}/t/monitor"
+        response = self.session.get(url, timeout=(10, 30))
+        response.raise_for_status()
+        # Monitor page uses windows-1251 encoding
+        return response.content.decode('windows-1251', errors="ignore")

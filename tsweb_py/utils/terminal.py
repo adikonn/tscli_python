@@ -21,17 +21,18 @@ def scanline_trim(prompt: str = "") -> str:
 
 def choose_index(prompt: str, options: list, max_attempts: int = 3) -> Optional[int]:
     """
-    Let user choose an index from a list of options.
-    Returns the selected index or None if invalid.
+    Let user choose an index from a list of options using 1-based numbering.
+    User inputs 1, 2, 3, ... but function returns 0-based index (0, 1, 2, ...).
+    Returns the selected 0-based index or None if invalid.
     """
     for _ in range(max_attempts):
         try:
-            choice = input(f"{prompt} (0-{len(options) - 1}): ")
+            choice = input(f"{prompt} (1-{len(options)}): ")
             idx = int(choice)
-            if 0 <= idx < len(options):
-                return idx
+            if 1 <= idx <= len(options):
+                return idx - 1  # Convert 1-based input to 0-based index
             console.print(
-                f"[red]Please enter a number between 0 and {len(options) - 1}[/red]"
+                f"[red]Please enter a number between 1 and {len(options)}[/red]"
             )
         except ValueError:
             console.print("[red]Please enter a valid number[/red]")

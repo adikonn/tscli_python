@@ -93,9 +93,9 @@ def contest_show():
         table.add_column("Name", style="white")
 
         for idx, compiler in enumerate(compilers):
-            marker = "*" if idx == default_lang else ""
+            marker = " *" if idx == default_lang else ""
             table.add_row(
-                f"{idx}{marker}", compiler.compiler_lang, compiler.compiler_name
+                f"{idx + 1}{marker}", compiler.compiler_lang, compiler.compiler_name
             )
 
         console.print(table)
@@ -132,7 +132,7 @@ def set_contest():
     table.add_column("Status", style="magenta")
 
     for idx, contest in enumerate(contests):
-        table.add_row(str(idx), contest.id, contest.name, contest.status)
+        table.add_row(str(idx + 1), contest.id, contest.name, contest.status)
 
     console.print(table)
 
@@ -188,8 +188,8 @@ def set_compiler():
     table.add_column("Name", style="white")
 
     for idx, compiler in enumerate(compilers):
-        marker = "*" if idx == config.default_lang else ""
-        table.add_row(f"{idx}{marker}", compiler.compiler_lang, compiler.compiler_name)
+        marker = " *" if idx == config.default_lang else ""
+        table.add_row(f"{idx + 1}{marker}", compiler.compiler_lang, compiler.compiler_name)
 
     console.print(table)
 
@@ -219,6 +219,148 @@ def contest_statements(output: Optional[Path]):
 
     console.print("[cyan]Fetching statements...[/cyan]")
     client.download_statements(output)
+
+
+@contest.command(name="monitor")
+def contest_monitor():
+    """Display contest leaderboard (monitor)."""
+    from bs4 import BeautifulSoup
+    
+    client = TestSysClient()
+
+    if not client.auto_login():
+        console.print("[yellow]Not logged in. Please login first.[/yellow]")
+        if not client.login():
+            return
+
+    console.print("[cyan]Fetching monitor...[/cyan]")
+    html = client.get_monitor_html()
+    
+    # Parse HTML with BeautifulSoup
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # Find the main table (TABLE with class=mtab)
+    monitor_table = soup.find('table', class_='mtab')
+    
+    if not monitor_table:
+        console.print("[red]Monitor table not found.[/red]")
+        return
+    
+    # Find all rows
+    rows = monitor_table.find_all('tr')
+    
+    if not rows:
+        console.print("[red]No data found in monitor table.[/red]")
+        return
+    
+    # First row is the header with problem IDs
+    header_row = rows[0]
+    headers = []
+    problem_headers = []
+    
+    for th in header_row.find_all('th'):
+        text = th.get_text(strip=True)
+        headers.append(text)
+        # Problem headers are links with problem IDs like "17A", "17B", etc.
+        link = th.find('a')
+        if link:
+            problem_headers.append(link.get_text(strip=True))
+    
+    # Create Rich table
+    from rich.table import Table
+    table = Table(title="Contest Monitor", show_header=True, header_style="bold cyan", border_style="blue")
+    
+    # Add columns based on headers
+    for header in headers:
+        if header == "ID":
+            # Skip ID column - we'll skip it in data too
+            continue
+        elif header == "Team":
+            table.add_column(header, style="white", no_wrap=True, overflow="ellipsis", max_width=15)
+        elif header == "=":
+            table.add_column(header, style="green", justify="right", width=2)
+        elif header == "Time":
+            table.add_column(header, style="yellow", justify="right", width=6)
+        elif header == "Rank":
+            table.add_column(header, style="cyan", justify="right", width=4)
+        else:
+            # Problem columns - narrow to fit in 80 columns
+            table.add_column(header, style="magenta", justify="center", width=3, no_wrap=True)
+    
+    # Process data rows (skip header and statistics rows at the end)
+    for row in rows[1:]:
+        # Check if this is a statistics row (Submits/Accepted/Rejected/Frozen)
+        first_cell = row.find('td')
+        if first_cell:
+            first_class = first_cell.get('class')
+            if first_class and isinstance(first_class, list):
+                # Skip statistics rows - they have class 'no', 'ok', 'wa', or 'fz' on first cell
+                if 'no' in first_class or 'ok' in first_class or 'wa' in first_class or 'fz' in first_class:
+                    continue
+        
+        cells = row.find_all('td')
+        if not cells or len(cells) < 3:
+            continue
+        
+        row_data = []
+        for idx, cell in enumerate(cells):
+            # Skip the first cell (ID column)
+            if idx == 0:
+                continue
+                
+            cell_class = cell.get('class')
+            if cell_class is None:
+                cell_class = []
+            elif isinstance(cell_class, str):
+                cell_class = [cell_class]
+            
+            # For problem cells (ok/wa/no), extract just the +/- and attempt count
+            # Use stripped_strings which splits on <BR> tags automatically
+            # Format: ['+1', '1.15:57'] or ['+', '2.16:21'] or ['-1', '3.21:18'] or ['.']
+            if 'ok' in cell_class or 'firstokeven' in cell_class or 'firstokodd' in cell_class:
+                # Accepted solution - extract just the +N part (first string)
+                strings = list(cell.stripped_strings)
+                if strings:
+                    result = strings[0]  # e.g., "+1" or "+"
+                    row_data.append(f"[green]{result}[/green]")
+                else:
+                    row_data.append(f"[green]?[/green]")
+            elif 'wa' in cell_class:
+                # Wrong answer - extract just the -N part (first string)
+                strings = list(cell.stripped_strings)
+                if strings:
+                    result = strings[0]  # e.g., "-1" or "-2"
+                    row_data.append(f"[red]{result}[/red]")
+                else:
+                    row_data.append(f"[red]?[/red]")
+            elif 'no' in cell_class:
+                # Not attempted - just show the dot
+                cell_text = cell.get_text(strip=True)
+                row_data.append(f"[dim]{cell_text}[/dim]")
+            elif 'solv' in cell_class:
+                # Solved count - green bold
+                cell_text = cell.get_text(strip=True)
+                row_data.append(f"[bold green]{cell_text}[/bold green]")
+            elif 'pen' in cell_class:
+                # Penalty time - yellow
+                cell_text = cell.get_text(strip=True)
+                row_data.append(f"[yellow]{cell_text}[/yellow]")
+            elif 'rk' in cell_class:
+                # Rank - cyan bold
+                cell_text = cell.get_text(strip=True)
+                row_data.append(f"[bold cyan]{cell_text}[/bold cyan]")
+            elif 'for' in cell_class:
+                # Current user's team - highlight with bold magenta
+                cell_text = cell.get_text(strip=True)
+                row_data.append(f"[bold magenta]{cell_text}[/bold magenta]")
+            else:
+                cell_text = cell.get_text(strip=True)
+                row_data.append(cell_text)
+        
+        if row_data:
+            table.add_row(*row_data)
+    
+    console.print(table)
 
 
 @contest.command(name="submit")
@@ -266,7 +408,7 @@ def contest_submit(file: Path, problem: Optional[str], lang: Optional[int], watc
         table.add_column("Name", style="white")
         
         for idx, prob in enumerate(problems):
-            table.add_row(str(idx), prob.problem_id, prob.problem_name)
+            table.add_row(str(idx + 1), prob.problem_id, prob.problem_name)
         
         console.print(table)
         
