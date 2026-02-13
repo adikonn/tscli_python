@@ -122,7 +122,7 @@ def set_contest():
         console.print("[red]No contests found.[/red]")
         return
 
-    # Display contests
+    # Display contests (reversed: newest at bottom, oldest at top)
     table = Table(
         title="Available Contests", show_header=True, header_style="bold cyan"
     )
@@ -131,8 +131,11 @@ def set_contest():
     table.add_column("Name", style="white")
     table.add_column("Status", style="magenta")
 
-    for idx, contest in enumerate(contests):
-        table.add_row(str(idx + 1), contest.id, contest.name, contest.status)
+    # Reverse display order but keep original numbering
+    for idx, contest in enumerate(reversed(contests)):
+        # Calculate original index (before reversal)
+        original_idx = len(contests) - idx - 1
+        table.add_row(str(original_idx + 1), contest.id, contest.name, contest.status)
 
     console.print(table)
 
