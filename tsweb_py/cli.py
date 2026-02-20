@@ -3,6 +3,7 @@
 import time
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 import click
 from rich.console import Console
@@ -634,6 +635,34 @@ def info():
         console.print(f"[bold]Name:[/bold] {user_info['name']}")
     if "contest" in user_info:
         console.print(f"[bold]Current Contest:[/bold] {user_info['contest']}")
+    if "deadline" in user_info:
+        console.print(f"[bold]Contest Deadline:[/bold] [yellow]{user_info['deadline']}[/yellow]")
+        
+        # Show time remaining if deadline_obj is available
+        if "deadline_obj" in user_info:
+            now = datetime.now()
+            deadline = user_info["deadline_obj"]
+            time_left = deadline - now
+            
+            if time_left.total_seconds() > 0:
+                # Calculate days, hours, minutes
+                days = time_left.days
+                hours, remainder = divmod(time_left.seconds, 3600)
+                minutes, _ = divmod(remainder, 60)
+                
+                # Format time remaining
+                parts = []
+                if days > 0:
+                    parts.append(f"{days}d")
+                if hours > 0:
+                    parts.append(f"{hours}h")
+                if minutes > 0 or not parts:  # Show minutes even if 0 if no other parts
+                    parts.append(f"{minutes}m")
+                
+                time_str = " ".join(parts)
+                console.print(f"[bold]Time Remaining:[/bold] [green]{time_str}[/green]")
+            else:
+                console.print(f"[bold]Time Remaining:[/bold] [red]Contest ended[/red]")
 
 
 @cli.command()

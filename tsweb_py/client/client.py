@@ -4,6 +4,7 @@ import getpass
 import re
 from typing import List, Optional
 from pathlib import Path
+from datetime import datetime, timedelta
 
 import requests
 from bs4 import BeautifulSoup
@@ -217,6 +218,32 @@ class TestSysClient:
                 user_info["name"] = line.replace("You are ", "")
             if line.startswith("Assigned contest:"):
                 user_info["contest"] = line.replace("Assigned contest: ", "")
+            
+            # Parse contest deadline
+            # Format: "Contest starts at 16.02.2026 00:00:00 and lasts 7199 minutes"
+            if line.startswith("Contest starts at") and "lasts" in line:
+                try:
+                    # Extract start time and duration
+                    match = re.search(
+                        r"Contest starts at (\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}) and lasts (\d+) minutes",
+                        line
+                    )
+                    if match:
+                        start_str = match.group(1)
+                        duration_minutes = int(match.group(2))
+                        
+                        # Parse start time: "16.02.2026 00:00:00"
+                        start_time = datetime.strptime(start_str, "%d.%m.%Y %H:%M:%S")
+                        
+                        # Calculate deadline
+                        deadline = start_time + timedelta(minutes=duration_minutes)
+                        
+                        # Store both formatted string and datetime object
+                        user_info["deadline"] = deadline.strftime("%d.%m.%Y %H:%M:%S")
+                        user_info["deadline_obj"] = deadline
+                except (ValueError, AttributeError) as e:
+                    # If parsing fails, just skip
+                    pass
 
         return user_info
 
