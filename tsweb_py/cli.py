@@ -243,6 +243,84 @@ def contest_monitor():
     # Parse HTML with BeautifulSoup
     soup = BeautifulSoup(html, 'html.parser')
     
+    # Extract contest timing information
+    page_text = soup.get_text()
+    lines = page_text.split('\n')
+    
+    contest_info = {}
+    for line in lines:
+        line = line.strip()
+        if line.startswith("Started at:"):
+            contest_info["started"] = line.replace("Started at:", "").strip()
+        elif line.startswith("Duration:"):
+            contest_info["duration"] = line.replace("Duration:", "").strip()
+        elif line.startswith("Will finish at:"):
+            contest_info["finish"] = line.replace("Will finish at:", "").strip()
+        elif line.startswith("State:"):
+            contest_info["state"] = line.replace("State:", "").strip()
+        elif line.startswith("Last updated:"):
+            contest_info["updated"] = line.replace("Last updated:", "").strip()
+    
+    # Display contest info before the table
+    if contest_info:
+        console.print("\n[bold cyan]Contest Information:[/bold cyan]")
+        if "started" in contest_info:
+            console.print(f"[bold]Started:[/bold] {contest_info['started']}")
+        if "duration" in contest_info:
+            console.print(f"[bold]Duration:[/bold] {contest_info['duration']}")
+        if "finish" in contest_info:
+            finish_str = contest_info['finish']
+            console.print(f"[bold]Finishes:[/bold] [yellow]{finish_str}[/yellow]")
+            
+            # Try to parse finish time and calculate time remaining
+            try:
+                # Format: "20.02.2026 23:59:00 UTC" or similar
+                # Remove "UTC" suffix if present
+                finish_clean = finish_str.replace(" UTC", "").strip()
+                finish_time = datetime.strptime(finish_clean, "%d.%m.%Y %H:%M:%S")
+                
+                now = datetime.now()
+                time_left = finish_time - now
+                
+                if time_left.total_seconds() > 0:
+                    # Calculate days, hours, minutes
+                    days = time_left.days
+                    hours, remainder = divmod(time_left.seconds, 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    
+                    # Format time remaining
+                    parts = []
+                    if days > 0:
+                        parts.append(f"{days}d")
+                    if hours > 0:
+                        parts.append(f"{hours}h")
+                    if minutes > 0 or not parts:
+                        parts.append(f"{minutes}m")
+                    
+                    time_str = " ".join(parts)
+                    console.print(f"[bold]Time Remaining:[/bold] [green]{time_str}[/green]")
+                else:
+                    console.print(f"[bold]Time Remaining:[/bold] [red]Contest ended[/red]")
+            except (ValueError, AttributeError):
+                # If parsing fails, just skip time remaining
+                pass
+        
+        if "state" in contest_info:
+            # Color code the state
+            state = contest_info["state"]
+            if state == "RUNNING":
+                state_colored = f"[green]{state}[/green]"
+            elif state == "RESULTS":
+                state_colored = f"[blue]{state}[/blue]"
+            elif state == "FROZEN":
+                state_colored = f"[cyan]{state}[/cyan]"
+            else:
+                state_colored = state
+            console.print(f"[bold]State:[/bold] {state_colored}")
+        if "updated" in contest_info:
+            console.print(f"[dim]Last updated: {contest_info['updated']}[/dim]")
+        console.print()  # Empty line before table
+    
     # Find the main table (TABLE with class=mtab)
     monitor_table = soup.find('table', class_='mtab')
     
