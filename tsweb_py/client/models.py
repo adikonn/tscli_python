@@ -41,6 +41,7 @@ class Submission:
     compiler: str
     result: str
     time: str
+    text_url: Optional[str] = None
 
 
 @dataclass

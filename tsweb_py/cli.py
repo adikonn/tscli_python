@@ -816,6 +816,85 @@ def feedback(submission_id: str):
         console.print("[yellow]No test results found for this submission.[/yellow]")
 
 
+@cli.command(name="get-submit")
+def get_submit():
+    """Download source code of a previously submitted solution."""
+    client = TestSysClient()
+
+    if not client.auto_login():
+        console.print("[yellow]Not logged in. Please login first.[/yellow]")
+        if not client.login():
+            return
+
+    console.print("[cyan]Fetching submissions...[/cyan]")
+    subs = client.get_all_submissions()
+
+    if not subs:
+        console.print("[yellow]No submissions found.[/yellow]")
+        return
+
+    # Display submissions table
+    table = Table(title="Available Submissions", show_header=True, header_style="bold cyan")
+    table.add_column("ID", style="cyan")
+    table.add_column("Problem", style="yellow")
+    table.add_column("Compiler", style="white")
+    table.add_column("Result", style="white")
+    table.add_column("Time", style="magenta")
+
+    for sub in subs[:20]:  # Show last 20
+        table.add_row(
+            sub.id,
+            sub.problem,
+            sub.compiler,
+            format_result_color(sub.result),
+            sub.time,
+        )
+
+    console.print(table)
+
+    # Ask user for submission ID
+    submission_id = console.input("\n[bold cyan]Enter submission ID to download:[/bold cyan] ").strip()
+
+    if not submission_id:
+        console.print("[yellow]No submission ID provided.[/yellow]")
+        return
+
+    # Find submission by ID
+    submission = None
+    for sub in subs:
+        if sub.id == submission_id:
+            submission = sub
+            break
+
+    if not submission:
+        console.print(f"[red]Submission with ID {submission_id} not found.[/red]")
+        return
+
+    if not submission.text_url:
+        console.print(f"[red]No text URL available for submission {submission_id}.[/red]")
+        return
+
+    # Download submission text
+    console.print(f"[cyan]Downloading submission {submission_id}...[/cyan]")
+    try:
+        source_code = client.download_submission_text(submission.text_url)
+        
+        # Determine file extension based on problem ID
+        # Problem format is like "17A", "18B", etc.
+        problem_id = submission.problem
+        filename = f"{problem_id}.cpp"
+        
+        # Save to file
+        output_path = Path(filename)
+        output_path.write_text(source_code, encoding='utf-8')
+        
+        console.print(f"[green]Successfully saved to {filename}[/green]")
+        console.print(f"[dim]Problem: {submission.problem}[/dim]")
+        console.print(f"[dim]Result: {submission.result}[/dim]")
+    except Exception as e:
+        console.print(f"[red]Error downloading submission: {e}[/red]")
+
+
 @cli.command()
 def version():
     """Show version information."""

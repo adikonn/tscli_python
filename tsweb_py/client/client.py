@@ -381,12 +381,21 @@ class TestSysClient:
                         console.print(f"[dim]DEBUG: Skipping row with {len(cols)} columns (need 6+)[/dim]")
                     continue
 
+                # Parse text URL from "Text" column (column 7)
+                # Table structure: ID, Problem, Attempt, Time, Compiler, Result, TestN, Text, CE cause, Feedback, Diff
+                text_url = None
+                if len(cols) > 7:
+                    text_link = cols[7].find('a')
+                    if text_link and text_link.get('href'):
+                        text_url = text_link.get('href')
+
                 submission = Submission(
                     id=cols[0].get_text(strip=True),
                     problem=cols[1].get_text(strip=True),
                     compiler=cols[4].get_text(strip=True),
                     result=cols[5].get_text(strip=True),
                     time=cols[3].get_text(strip=True),
+                    text_url=text_url,
                 )
                 submissions.append(submission)
 
@@ -560,3 +569,24 @@ class TestSysClient:
         response.raise_for_status()
         # Monitor page uses windows-1251 encoding
         return response.content.decode('windows-1251', errors="ignore")
+
+    def download_submission_text(self, text_url: str) -> str:
+        """
+        Download submission source code by text URL.
+        
+        Args:
+            text_url: URL path to the submission text (e.g., "/t/text?id=12345")
+            
+        Returns:
+            Source code as string
+        """
+        html = self._get(text_url)
+        # The text page contains the source code in a <PRE> tag
+        soup = BeautifulSoup(html, "html.parser")
+        pre_tag = soup.find("pre")
+        
+        if pre_tag:
+            return pre_tag.get_text()
+        else:
+            # If no <PRE> tag, return the whole body text
+            return soup.get_text()
